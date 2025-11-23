@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 from audio_recorder_streamlit import audio_recorder
 import speech_recognition as sr
 import io
+from gtts import gTTS
+import tempfile
+import base64
 
 # Load environment variables
 load_dotenv()
@@ -14,19 +17,19 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Personality configurations
 PERSONALITIES = {
-    "Can Do Everything AI Buddy": {
+    "AI Buddy": {
         "name": "AI Buddy",
         "icon": "🤖",
         "system_prompt": "You are a helpful, friendly, and enthusiastic AI assistant who can help with anything. You're capable, confident, and always ready to tackle any challenge. You approach every task with a positive attitude and provide clear, practical solutions.",
         "description": "A versatile AI assistant ready to help with any task"
     },
-    "Chat Everything": {
+    "Chat Buddy": {
         "name": "Chat Buddy",
         "icon": "💬",
         "system_prompt": "You are a friendly conversationalist who loves to chat about absolutely anything! You're engaging, curious, and enjoy deep conversations on any topic - from everyday life to philosophy, hobbies, current events, random thoughts, and everything in between. You're a great listener and always keep the conversation flowing naturally.",
         "description": "A friendly companion for casual conversations about anything"
     },
-    "Game Professional": {
+    "Gaming Pro": {
         "name": "Gaming Pro",
         "icon": "🎮",
         "system_prompt": "You are an expert gaming professional with deep knowledge of video games across all platforms and genres. You provide strategic advice, tips, tricks, game recommendations, build guides, walkthroughs, and gaming industry insights. You're passionate about gaming culture and help players improve their skills and enjoy their gaming experience to the fullest.",
@@ -50,6 +53,21 @@ st.set_page_config(
 # Sidebar
 with st.sidebar:
     st.title("🤖 AI Chat Assistant")
+    st.markdown("---")
+
+    # Voice recorder at top
+    st.subheader("🎤 Voice Recorder")
+    st.write("Click the microphone to record")
+
+    # Voice recorder in sidebar
+    audio_bytes = audio_recorder(
+        text="",
+        recording_color="#e74c3c",
+        neutral_color="#3498db",
+        icon_name="microphone",
+        icon_size="2x"
+    )
+
     st.markdown("---")
 
     # Personality selector
@@ -106,6 +124,23 @@ with st.sidebar:
         st.session_state.selected_language = selected_language
 
     st.markdown("---")
+    st.subheader("🔊 Audio Settings")
+
+    # Auto-play TTS toggle
+    auto_play_tts = st.toggle(
+        "Auto-play AI responses",
+        value=True,
+        help="Automatically play audio for AI responses"
+    )
+
+    # Store in session state
+    if "auto_play_tts" not in st.session_state:
+        st.session_state.auto_play_tts = True
+
+    if auto_play_tts != st.session_state.auto_play_tts:
+        st.session_state.auto_play_tts = auto_play_tts
+
+    st.markdown("---")
     st.subheader("Voice Input Tips")
     st.write("🎤 Click microphone to start")
     st.write("🗣️ Speak slowly and clearly")
@@ -135,33 +170,59 @@ if "current_personality" not in st.session_state:
 if "voice_text" not in st.session_state:
     st.session_state.voice_text = ""
 
+# Initialize TTS audio cache in session state
+if "tts_audio" not in st.session_state:
+    st.session_state.tts_audio = {}
+
+# Initialize TTS processing flag
+if "tts_processing" not in st.session_state:
+    st.session_state.tts_processing = False
+
+# Initialize last played message index
+if "last_played_idx" not in st.session_state:
+    st.session_state.last_played_idx = -1
+
 # Reset chat if personality changed
 if st.session_state.current_personality != selected_personality:
     st.session_state.messages = []
     st.session_state.current_personality = selected_personality
 
 # Main chat interface
-st.title(f"{personality_config['icon']} Chat with {personality_config['name']}")
+st.title(f"{personality_config['icon']} {selected_personality}")
 
-# Voice input section
-st.markdown("### 🎤 Voice Input")
-
-# Create status placeholder
+# Create status placeholder for voice input feedback
 status_placeholder = st.empty()
 
-col1, col2 = st.columns([3, 1])
+# Function to generate TTS audio
+def generate_tts_audio(text, message_index):
+    """Generate TTS audio for a message and cache it in session state"""
+    # Check if audio already exists in cache
+    if message_index in st.session_state.tts_audio:
+        return st.session_state.tts_audio[message_index]
 
-with col1:
-    st.info("💡 **Instructions:** Click microphone button, speak clearly, then click stop when finished")
+    try:
+        # Create TTS object
+        tts = gTTS(text=text, lang='en', slow=False)
 
-with col2:
-    audio_bytes = audio_recorder(
-        text="",
-        recording_color="#e74c3c",
-        neutral_color="#3498db",
-        icon_name="microphone",
-        icon_size="2x"
-    )
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as fp:
+            tts.save(fp.name)
+
+            # Read the audio file as bytes
+            with open(fp.name, 'rb') as audio_file:
+                audio_bytes = audio_file.read()
+
+            # Clean up temporary file
+            os.unlink(fp.name)
+
+            # Cache the audio
+            st.session_state.tts_audio[message_index] = audio_bytes
+
+            return audio_bytes
+    except Exception as e:
+        # Silently fail for TTS errors to avoid disrupting the chat experience
+        # User can still see the text response
+        return None
 
 # Function to process voice commands
 def process_voice_command(text):
@@ -282,18 +343,31 @@ else:
 st.markdown("---")
 
 # Display chat messages
-for message in st.session_state.messages:
+for idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+
+    # Add TTS audio player for assistant messages (outside chat_message container)
+    if message["role"] == "assistant" and st.session_state.auto_play_tts:
+        # Generate audio for this message
+        with st.spinner("🔊 Generating audio..."):
+            audio_bytes = generate_tts_audio(message["content"], idx)
+
+        if audio_bytes:
+            # Show audio player for all assistant messages
+            st.audio(audio_bytes, format='audio/mp3', autoplay=(idx == len(st.session_state.messages) - 1))
+        else:
+            st.warning("⚠️ Audio generation failed (rate limit or error)")
 
 # Handle command responses
 if command_response:
     with st.chat_message("assistant"):
         st.markdown(f"ℹ️ {command_response}")
     st.session_state.messages.append({"role": "assistant", "content": command_response})
+    # The TTS will be handled in the next rerun when displaying messages
 
 # Text input field - always show the typing box
-user_input = st.chat_input("Type your message here or use voice input above...")
+user_input = st.chat_input("Type your message here or use voice input in sidebar...")
 
 # Use voice prompt if available, otherwise use typed input
 if not prompt and user_input:
