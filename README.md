@@ -8,9 +8,12 @@ A powerful AI chatbot web application built with Streamlit and Google Gemini API
 
 ## ✨ Features
 
-### 🎤 Advanced Voice Input
+### 🎤 Advanced Voice Input & Output
 - **Voice Recording**: Click-to-record microphone interface
 - **Speech-to-Text**: Automatic transcription using Google Speech Recognition
+- **Text-to-Speech**: High-quality audio responses using AWS Polly
+- **Voice Selection**: Choose from 10 different voices (US & British accents)
+- **Auto-play Audio**: Toggle automatic playback of AI responses
 - **Multi-Language Support**: 12 languages including English, French, Spanish, German, Chinese, Japanese, Korean, Italian, Portuguese, Russian, Arabic, and Hindi
 - **Ambient Noise Adjustment**: Automatic noise reduction for better accuracy
 - **Visual Feedback**: Real-time status updates and transcription display
@@ -39,6 +42,7 @@ Control the app with your voice:
 ### Prerequisites
 - Python 3.13 or higher
 - Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
+- AWS Account with Polly access ([Create one here](https://aws.amazon.com/))
 
 ### Installation
 
@@ -58,9 +62,12 @@ Control the app with your voice:
      ```bash
      cp .env.example .env
      ```
-   - Edit `.env` and add your Gemini API key:
+   - Edit `.env` and add your API keys and AWS credentials:
      ```
-     GEMINI_API_KEY=your_api_key_here
+     GEMINI_API_KEY=your_gemini_api_key_here
+     AWS_ACCESS_KEY_ID=your_aws_access_key_here
+     AWS_SECRET_ACCESS_KEY=your_aws_secret_key_here
+     AWS_REGION=ca-central-1
      ```
 
 4. **Run the application**
@@ -102,6 +109,7 @@ Simply speak these commands:
 - **Frontend**: Streamlit
 - **AI Model**: Google Gemini 2.5 Flash
 - **Speech Recognition**: Google Speech Recognition API
+- **Text-to-Speech**: AWS Polly
 - **Audio Recording**: audio-recorder-streamlit
 - **Language**: Python 3.13
 
@@ -114,6 +122,7 @@ python-dotenv>=1.0.0
 audio-recorder-streamlit>=0.0.8
 SpeechRecognition>=3.10.0
 pydub>=0.25.1
+boto3>=1.26.0
 ```
 
 ## 🌍 Supported Languages
@@ -158,7 +167,23 @@ Each personality has a unique system prompt that shapes how the AI responds:
 Create a `.env` file in the root directory:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
+AWS_ACCESS_KEY_ID=your_aws_access_key_here
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key_here
+AWS_REGION=ca-central-1
 ```
+
+### AWS Polly Voice Options
+The app includes 10 voice options:
+- **Joanna** (Female, US) - Default
+- **Matthew** (Male, US)
+- **Ivy** (Female, US Child)
+- **Joey** (Male, US)
+- **Kendra** (Female, US)
+- **Kimberly** (Female, US)
+- **Salli** (Female, US)
+- **Amy** (Female, British)
+- **Brian** (Male, British)
+- **Emma** (Female, British)
 
 ### Customizing Personalities
 Edit the `PERSONALITIES` dictionary in `app.py`:
@@ -208,6 +233,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 🙏 Acknowledgments
 
 - [Google Gemini API](https://ai.google.dev/) for the AI model
+- [AWS Polly](https://aws.amazon.com/polly/) for text-to-speech
 - [Streamlit](https://streamlit.io/) for the web framework
 - [SpeechRecognition](https://github.com/Uberi/speech_recognition) for voice input
 - [audio-recorder-streamlit](https://github.com/Jooui/audio-recorder-streamlit) for the microphone component

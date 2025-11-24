@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 from audio_recorder_streamlit import audio_recorder
 import speech_recognition as sr
 import io
-from gtts import gTTS
-import tempfile
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 import base64
 
 # Load environment variables
@@ -14,6 +14,14 @@ load_dotenv()
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Configure AWS Polly client
+polly_client = boto3.client(
+    'polly',
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    region_name=os.getenv("AWS_REGION", "ca-central-1")
+)
 
 # Personality configurations
 PERSONALITIES = {
@@ -140,6 +148,37 @@ with st.sidebar:
     if auto_play_tts != st.session_state.auto_play_tts:
         st.session_state.auto_play_tts = auto_play_tts
 
+    # Voice selector for AWS Polly
+    POLLY_VOICES = {
+        "Joanna (Female, US)": "Joanna",
+        "Matthew (Male, US)": "Matthew",
+        "Ivy (Female, US Child)": "Ivy",
+        "Joey (Male, US)": "Joey",
+        "Kendra (Female, US)": "Kendra",
+        "Kimberly (Female, US)": "Kimberly",
+        "Salli (Female, US)": "Salli",
+        "Amy (Female, British)": "Amy",
+        "Brian (Male, British)": "Brian",
+        "Emma (Female, British)": "Emma"
+    }
+
+    selected_voice = st.selectbox(
+        "Voice Selection:",
+        options=list(POLLY_VOICES.keys()),
+        index=0,
+        help="Select the voice for AI responses"
+    )
+
+    # Store voice in session state
+    if "selected_voice" not in st.session_state:
+        st.session_state.selected_voice = "Joanna"
+
+    # Update session state if voice changed
+    if POLLY_VOICES[selected_voice] != st.session_state.selected_voice:
+        st.session_state.selected_voice = POLLY_VOICES[selected_voice]
+        # Clear TTS cache when voice changes
+        st.session_state.tts_audio = {}
+
     st.markdown("---")
     st.subheader("Voice Input Tips")
     st.write("🎤 Click microphone to start")
@@ -193,35 +232,48 @@ st.title(f"{personality_config['icon']} {selected_personality}")
 # Create status placeholder for voice input feedback
 status_placeholder = st.empty()
 
-# Function to generate TTS audio
+# Function to generate TTS audio using AWS Polly
 def generate_tts_audio(text, message_index):
-    """Generate TTS audio for a message and cache it in session state"""
+    """Generate TTS audio for a message using AWS Polly and cache it in session state"""
     # Check if audio already exists in cache
     if message_index in st.session_state.tts_audio:
         return st.session_state.tts_audio[message_index]
 
     try:
-        # Create TTS object
-        tts = gTTS(text=text, lang='en', slow=False)
+        # Limit text length to avoid very long audio files
+        if len(text) > 1500:
+            text = text[:1500] + "..."
 
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as fp:
-            tts.save(fp.name)
+        # Get selected voice from session state
+        voice_id = st.session_state.get('selected_voice', 'Joanna')
 
-            # Read the audio file as bytes
-            with open(fp.name, 'rb') as audio_file:
-                audio_bytes = audio_file.read()
+        # Generate speech using AWS Polly
+        response = polly_client.synthesize_speech(
+            Text=text,
+            Engine='standard',
+            VoiceId=voice_id,
+            OutputFormat='mp3',
+            LanguageCode='en-US'
+        )
 
-            # Clean up temporary file
-            os.unlink(fp.name)
+        # Read audio stream directly
+        if 'AudioStream' in response:
+            audio_bytes = response['AudioStream'].read()
 
             # Cache the audio
             st.session_state.tts_audio[message_index] = audio_bytes
 
             return audio_bytes
+        else:
+            return None
+
+    except (BotoCoreError, ClientError) as e:
+        # Return None on AWS error
+        st.error(f"AWS Polly Error: {str(e)}")
+        return None
     except Exception as e:
-        # Silently fail for TTS errors to avoid disrupting the chat experience
-        # User can still see the text response
+        # Return None on any other error
+        st.error(f"TTS Error: {str(e)}")
         return None
 
 # Function to process voice commands
@@ -349,15 +401,13 @@ for idx, message in enumerate(st.session_state.messages):
 
     # Add TTS audio player for assistant messages (outside chat_message container)
     if message["role"] == "assistant" and st.session_state.auto_play_tts:
-        # Generate audio for this message
-        with st.spinner("🔊 Generating audio..."):
-            audio_bytes = generate_tts_audio(message["content"], idx)
+        audio_bytes = generate_tts_audio(message["content"], idx)
 
         if audio_bytes:
             # Show audio player for all assistant messages
-            st.audio(audio_bytes, format='audio/mp3', autoplay=(idx == len(st.session_state.messages) - 1))
+            st.audio(audio_bytes, format='audio/mpeg', start_time=0)
         else:
-            st.warning("⚠️ Audio generation failed (rate limit or error)")
+            st.info("ℹ️ Audio currently unavailable. Toggle off to hide this message.")
 
 # Handle command responses
 if command_response:
